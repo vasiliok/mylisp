@@ -88,6 +88,10 @@ public:
   std::string _val;
   int _val_int;
   vector<Value> _array;
+  
+  const vector<Value> & asArray() const {
+    return _array;
+  }
   const Value & asArray(int idx) const {
     assert(_type == AT_array);
     return _array[idx];
@@ -149,6 +153,49 @@ inline vector<Lexem>::iterator parseLexemArray(const vector<Lexem>& lexs, vector
   }
   return lexit;
 }
+
+class Evaluate {
+public:
+  Value getFunc(Value v) {
+    Value f = *v.asArray().begin();
+    if (f.asStr() == "+") {
+      return Value(plus_operator(v.asArray().begin()+1));
+    }
+    if (f.asStr() == "-") {
+      return Value(minus_operator(v.asArray().begin()+1));
+    }
+    if (f.asStr() == "*") {
+      return Value(mul_operator(v.asArray().begin()+1));
+    }
+    if (f.asStr() == "/") {
+      return Value(div_operator(v.asArray().begin()+1));
+    }
+    return Value();
+  }
+  
+  int plus_operator(vector<Value>::const_iterator it) {
+    return getValue(*it).asInt() + getValue(*(it+1)).asInt();
+  }
+  int minus_operator(vector<Value>::const_iterator it) {
+    return getValue(*it).asInt() - getValue(*(it+1)).asInt();
+  }
+  int mul_operator(vector<Value>::const_iterator it) {
+    return getValue(*it).asInt() * getValue(*(it+1)).asInt();
+  }
+  int div_operator(vector<Value>::const_iterator it) {
+    return getValue(*it).asInt() / getValue(*(it+1)).asInt();
+  }
+
+  Value getValue(Value v) {
+    if (v.getType() == AT_array) {
+      return getFunc(v);
+    }
+    return v;
+  }
+  
+  
+  
+};
 
 //inline vector<Lexem>::iterator parseLexem(const vector<Lexem>& lexs, vector<Lexem>::iterator lexit, Value &value)
 //{

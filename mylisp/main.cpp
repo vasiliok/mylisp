@@ -74,6 +74,9 @@ int main(int argc, const char * argv[]) {
     TEST_PARSE_S(v.asArray(0), AT_identifier, "+");
     TEST_PARSE_I(v.asArray(1), AT_number, 2);
     TEST_PARSE_I(v.asArray(2), AT_number, 3);
+    Evaluate eval;
+    Value vr = eval.getFunc(v);
+    ASRT(vr.asInt() == 5);
   }
   {
     lexs = getLexems("(defun bar (a b))");
@@ -85,5 +88,24 @@ int main(int argc, const char * argv[]) {
     TEST_PARSE_S(v.asArray(2).asArray(0), AT_identifier, "a");
     TEST_PARSE_S(v.asArray(2).asArray(1), AT_identifier, "b");
   }
+  {
+    lexs = getLexems("(+ 2 (+ 1 (+ 1 1)))");
+    Value v;
+    vector<Lexem>::iterator lexit = lexs.begin();
+    parseElement(lexs, lexit, v);
+    ASRT(v._type == AT_array);
+    TEST_PARSE_S(v.asArray(0), AT_identifier, "+");
+    TEST_PARSE_I(v.asArray(1), AT_number, 2);
+    TEST_PARSE_S(v.asArray(2).asArray(0), AT_identifier, "+");
+    TEST_PARSE_I(v.asArray(2).asArray(1), AT_number, 1);
+    TEST_PARSE_S(v.asArray(2).asArray(2).asArray(0), AT_identifier, "+");
+    TEST_PARSE_I(v.asArray(2).asArray(2).asArray(1), AT_number, 1);
+    TEST_PARSE_I(v.asArray(2).asArray(2).asArray(2), AT_number, 1);
+    Evaluate eval;
+    Value vr = eval.getFunc(v);
+    ASRT(vr.asInt() == 5);
+  }
+
+  
   return 0;
 }
