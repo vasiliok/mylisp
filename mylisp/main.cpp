@@ -106,6 +106,31 @@ int main(int argc, const char * argv[]) {
     ASRT(vr.asInt() == 5);
   }
 
+  {
+    lexs = getLexems("\
+(progn\
+  (setq i 10)\
+  (loop (> i 0)\
+    (progn\
+      (print i)\
+      (setq i (- i 1))\
+    )\
+  )\
+)");
+    Value v;
+    vector<Lexem>::iterator lexit = lexs.begin();
+    parseElement(lexs, lexit, v);
+    Evaluate eval;
+    Value vr = eval.getFunc(v);
+    
+  }
+  
+  {
+    Value v = run_program("(progn\
+    (let ((birch 3) pine fir (oak 'some)))\
+    (message \"Here are '%d' variables with '%s', '%s', and '%s' value.\" birch pine fir oak))");
+    std::cout << v.asStr();
+  }
   
   return 0;
 }

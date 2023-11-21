@@ -1,0 +1,8 @@
+  lexs = getLexems("(+ 2 3)");
+  Value v;
+  vector<Lexem>::iterator lexit = lexs.begin();
+  parseLexem(lexs, lexit, v);
+  if (!(v._array[0]._type == AT_array)) { printf("v._array[0]._type == AT_array");};
+  
+  if (v.getArray()[0].getArray()[0].getType()!=AT_identifier) {printf("v.getArray()[0].getArray()[0].getType()"); printf("; "); printf("AT_identifier");}; if (v.getArray()[0].getArray()[0].getStrValue()!="+") {printf("v.getArray()[0].getArray()[0].getStrValue()"); printf("; "); printf("\"+\"");};;
+  if (v.getArray()[0].getArray()[1].getType()!=AT_identifier) {printf("v.getArray()[0].getArray()[1].getType()"); printf("; "); printf("AT_identifier");}; if (v.getArray()[0].getArray()[1].getStrValue()!="2") {printf("v.getArray()[0].getArray()[1].getStrValue()"); printf("; "); printf("\"2\"");};;

@@ -13,10 +13,27 @@
 #include <cassert>
 #include <stdexcept>
 #include <stack>
+#include <exception>
+#include <stdexcept>
+#include <map>
+#include <iostream>
+
+class InterpreterException : public std::runtime_error
+{
+public:
+  explicit InterpreterException(const std::string& s)
+  : std::runtime_error(s)
+  {}
+  explicit InterpreterException(const char* pc)
+  : std::runtime_error(pc)
+  {}
+
+};
+
+#define THROWIF(C, M) if ((C)) throw InterpreterException(M);
 using namespace std;
 
-enum AtomType
-{
+enum AtomType {
   AT_array,
   AT_number,
   AT_str,
@@ -25,9 +42,16 @@ enum AtomType
   AT_nil,
   AT_unknown
 };
-
-enum LexemType
-{
+enum ValueType {
+  VT_string,
+  VT_number,
+  VT_float,
+  VT_double,
+  VT_bool,
+  VT_ident,
+  VT_proced
+};
+enum LexemType {
   LT_OpPar,
   LT_ClosPar,
   LT_Apos,
@@ -58,9 +82,7 @@ public:
   LexemType _type;
   string _val;
 };
-
-class Value
-{
+class Value {
 public:
   Value()
   : _type(AT_unknown)
@@ -84,9 +106,29 @@ public:
   , _val_int(0)
   {}
   
+  Value(const Value& v) : _type(v._type)
+  {
+    switch(v._type) {
+        case AT_number:
+        case AT_nil:
+          _val_int = v._val_int;
+          break;
+        case AT_str:
+        case AT_identifier:
+        case AT_proc:
+          _val = v._val;
+          break;
+        case AT_array:
+          _array = v._array;
+          break;
+        default:
+          break;
+    }
+  }
   AtomType _type;
   std::string _val;
   int _val_int;
+  double _val_dbl;
   vector<Value> _array;
   
   const vector<Value> & asArray() const {
@@ -108,7 +150,31 @@ public:
   const int asInt() const {
     return _val_int;
   }
+  bool isInt() {
+    return _type == AT_number;
+  }
+  string toStr() const {
+    if (_type == AT_str) {
+      return _val;
+    }
+    else if (_type == AT_number) {
+      return to_string(_val_int);
+    }
+    else if (_type == AT_nil) {
+      return "nil";
+    }
+    InterpreterException("unexpected type");
+    return "";
+  }
 };
+
+inline vector<Value>::iterator first(vector<Value> v) {
+  return v.begin();
+}
+
+inline vector<Value>::iterator first_one(vector<Value> v) {
+  return v.begin()+1;
+}
 
 class Atom {
   AtomType type;
@@ -156,123 +222,180 @@ inline vector<Lexem>::iterator parseLexemArray(const vector<Lexem>& lexs, vector
 
 class Evaluate {
 public:
+
   Value getFunc(Value v) {
+    THROWIF(v.getType() != AT_array, "Value must be array");
     Value f = *v.asArray().begin();
     if (f.asStr() == "+") {
-      return Value(plus_operator(v.asArray().begin()+1));
+      if (v.getType() != AT_array) throw "Need array";
+      return Value(plus_operator(v.asArray().begin()+1, v.asArray().end()));
     }
-    if (f.asStr() == "-") {
-      return Value(minus_operator(v.asArray().begin()+1));
+    else if (f.asStr() == "-") {
+      return Value(minus_operator(v.asArray().begin()+1, v.asArray().end()));
     }
-    if (f.asStr() == "*") {
-      return Value(mul_operator(v.asArray().begin()+1));
+    else if (f.asStr() == "*") {
+      return Value(mul_operator(v.asArray().begin()+1, v.asArray().end()));
     }
-    if (f.asStr() == "/") {
-      return Value(div_operator(v.asArray().begin()+1));
+    else if (f.asStr() == "/") {
+      return Value(div_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == ">") {
+      return Value(more_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == "<") {
+      return Value(less_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == "if") {
+      return Value(if_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == "loop") {
+      return Value(loop_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == "print") {
+      return Value(print_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == "setq") {
+      return Value(setq_operator(v.asArray().begin()+1, v.asArray().end()));
+    }
+    else if (f.asStr() == "progn") {
+      return Value(progn_operator(v.asArray()));
+    }
+    else if (f.asStr() == "let") {
+      return Value(let_operator(v.asArray()));
+    }
+    else if (f.asStr() == "message") {
+      return Value(message_operator(v.asArray()));
+    }
+    else {
+      throw InterpreterException("unknown operator");
     }
     return Value();
   }
   
-  int plus_operator(vector<Value>::const_iterator it) {
+  int plus_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("+");
+    THROWIF(distance(it, itend) < 2, "operator '+' needs 2 arguments");
     return getValue(*it).asInt() + getValue(*(it+1)).asInt();
   }
-  int minus_operator(vector<Value>::const_iterator it) {
+  int minus_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("-");
+    THROWIF(distance(it, itend) < 2, "operator '-' needs 2 arguments");
     return getValue(*it).asInt() - getValue(*(it+1)).asInt();
   }
-  int mul_operator(vector<Value>::const_iterator it) {
+  int mul_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("*");
+    THROWIF(distance(it, itend) < 2, "operator '*' needs 2 arguments");
     return getValue(*it).asInt() * getValue(*(it+1)).asInt();
   }
-  int div_operator(vector<Value>::const_iterator it) {
+  int div_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("/");
+    THROWIF(distance(it, itend) < 2, "operator '/' needs 2 arguments");
     return getValue(*it).asInt() / getValue(*(it+1)).asInt();
+  }
+  int more_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back(">");
+    THROWIF(distance(it, itend) < 2, "operator '>' needs 2 arguments");
+    return getValue(*it).asInt() > getValue(*(it+1)).asInt();
+  }
+  int less_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("<");
+    THROWIF(distance(it, itend) < 2, "operator '<' needs 2 arguments");
+    return getValue(*it).asInt() < getValue(*(it+1)).asInt();
+  }
+  Value if_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("if");
+    THROWIF(distance(it, itend) < 3, "operator 'if' needs 3 arguments");
+    return  getValue(*it).asInt() > 0 ? getValue(*(it+1)) : getValue(*(it+2));
+  }
+  
+  Value loop_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("loop");
+    THROWIF(distance(it, itend) < 1, "operator 'loop' needs 1 arguments");
+    while(getValue(*it).asInt()) {
+      getValue(*(it + 1));
+    }
+    return Value();
+  }
+
+  Value print_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("print");
+    printf("%s", getValue(*it).toStr().c_str());
+    return Value();
+  }
+
+  Value setq_operator(vector<Value>::const_iterator it, vector<Value>::const_iterator itend) {
+    m_stack_trace.push_back("setq");
+    m_var_map[it->asStr()] = getValue(*(it+1));
+    return Value();
+  }
+  Value progn_operator(vector<Value> v) {
+    m_stack_trace.push_back("progn");
+    Value lastv;
+    for (auto i = v.begin() + 1; i != v.end(); ++i) {
+      lastv = getValue(*i);
+    }
+    return lastv;
+  }
+  Value let_operator(vector<Value> v) {
+    m_stack_trace.push_back("let");
+    Value lastv;
+    THROWIF(v.size() <= 1, "argument count must be more 0");
+    
+    //THROWIF((v.begin()+1)->getType() != AT_array, "first argument must be array");
+        auto let_params = v[1].asArray();
+        for (auto m : let_params) {
+          if (m.getType() == AT_array) {
+            m_var_map[m.asArray(0).asStr()] = getValue(m.asArray(1));
+          }
+          else {
+            m_var_map[m.asStr()] = 0;
+          }
+        }
+    return lastv;
+  }
+  Value message_operator(vector<Value> v) {
+    std::string fmt = v[1].asStr();
+    auto c = fmt.begin();
+    int idx=1;
+    std::string res;
+    while(c != fmt.end()) {
+      if (*c == '%') {
+        if (++c != fmt.end()) {
+          if (*c == 'd') {
+            res += std::to_string(getValue(v[idx]).asInt());
+          }
+          else if (*c == 's') {
+            res += getValue(v[idx]).asStr();
+          }
+          idx++;
+        }
+      }
+      else {
+        res += *c;
+      }
+      c++;
+    }
+    std::cout << res;
+    return Value(res, AT_str);
   }
 
   Value getValue(Value v) {
+    m_stack_trace.push_back("getValue");
     if (v.getType() == AT_array) {
       return getFunc(v);
+    }
+    else if (v.getType() == AT_identifier){
+      return m_var_map[v.asStr()];
     }
     return v;
   }
   
-  
-  
+  std::map<std::string, Value> m_var_map;
+  std::map<std::string, Value> m_fn_map;
+  std::vector<std::string> m_stack_trace;
+
 };
 
-//inline vector<Lexem>::iterator parseLexem(const vector<Lexem>& lexs, vector<Lexem>::iterator lexit, Value &value)
-//{
-//  if (lexit->getType() == LT_OpPar)
-//  {
-//    value._type = AT_array;
-//  }
-//  Value v;
-//
-//  for (;lexit != lexs.end(); ++lexit)
-//  {
-//    Value v_;
-//
-//    switch (lexit->getType()) {
-//      case LT_OpPar:
-//        //value_stack.push(val);
-//        value._type = AT_array;
-//        lexit = parseLexem(lexs, ++lexit, v, true);
-//        value._array.push_back(v);
-//        break;
-//      case LT_Num:
-//        v_ = Value(atoi(lexit->getValue().c_str()));
-//        break;
-//      case  LT_Str:
-//        v_ = Value(lexit->getValue(), AT_str);
-//        break;
-//      case LT_Ident:
-//        v_ = Value(lexit->getValue(), AT_identifier);
-//        break;
-//      case LT_Apos:
-//        v_ = Value(lexit->getValue(), AT_identifier);
-//        break;
-//      case LT_ClosPar:
-//        value = v;
-//        break;
-//    }
-//
-//  }
-//  return lexit;
-//}
-
-    
-//    AtomType type = AT_unknown;
-//    std::string str;
-//    while (!isspace(*v))
-//    {
-//      if (isdigit(*v))
-//      {
-//        if (type == AT_unknown)
-//        {
-//          type = AT_number;
-//        }
-//      }
-//      else if (isalpha(*v))
-//      {
-//        if (type != AT_str)
-//        {
-//          type = AT_identifier;
-//        }
-//      }
-//      else if (*v == '\'')
-//      {
-//        if (type == AT_unknown)
-//        {
-//          type= AT_str;
-//          v++;
-//        }
-//        else if(type == AT_str)
-//        {
-//          v++;
-//        }
-//      }
-//      str += *v;
-//      v++;
-//
-//    }
-//    return Value(str, type);
 
 class MyLisp
 {
@@ -368,6 +491,15 @@ class MyLisp
 };
 
 vector<Lexem> getLexems(string s);
+inline Value run_program(std::string s) {
+  Value v;
+  vector<Lexem> lexs = getLexems(s);
+  vector<Lexem>::iterator lexit = lexs.begin();
+  parseElement(lexs, lexit, v);
+  Evaluate eval;
+  Value vr = eval.getFunc(v);
+  return vr;
+}
 
 #define ASRT(C) if (!(C)) { printf(#C); throw std::runtime_error(#C);}
 #define ASRTEQ(V,E) if (V!=E) {printf(#V); printf("; "); printf(#E);}
